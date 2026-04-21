@@ -28,6 +28,9 @@ spec:
       hostPID: true
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
@@ -59,6 +62,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: KERNO_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KERNO_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: KERNO_LOG_LEVEL
               value: {{ .Values.log.level }}
             - name: KERNO_LOG_FORMAT
@@ -72,30 +83,68 @@ spec:
             httpGet:
               path: /healthz
               port: metrics
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
             periodSeconds: 15
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /readyz
               port: metrics
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
           volumeMounts:
+            # ── eBPF core (6 programs: syscall, tcp, oom, disk, sched, fd) ──
             - name: sys-kernel-debug
               mountPath: /sys/kernel/debug
               readOnly: true
+            - name: sys-kernel-btf
+              mountPath: /sys/kernel/btf
+              readOnly: true
             - name: sys-fs-bpf
               mountPath: /sys/fs/bpf
+            # ── procfs (memory, conntrack, cpu stats, network stats) ─────────
             - name: proc
-              mountPath: /proc
+              mountPath: /host/proc
+              readOnly: true
+            # ── cgroupfs (cpu_throttled, memory_limit_pressure) ──────────────
+            - name: sys-fs-cgroup
+              mountPath: /host/sys/fs/cgroup
+              readOnly: true
+            # ── NIC stats (nic_errors) ───────────────────────────────────────
+            - name: sys-class-net
+              mountPath: /host/sys/class/net
+              readOnly: true
+            # ── Disk device stats (disk_space_critical, disk_io_bottleneck) ──
+            - name: sys-block
+              mountPath: /host/sys/block
               readOnly: true
       volumes:
         - name: sys-kernel-debug
           hostPath:
             path: /sys/kernel/debug
+            type: Directory
+        - name: sys-kernel-btf
+          hostPath:
+            path: /sys/kernel/btf
+            type: Directory
         - name: sys-fs-bpf
           hostPath:
             path: /sys/fs/bpf
+            type: DirectoryOrCreate
         - name: proc
           hostPath:
             path: /proc
+            type: Directory
+        - name: sys-fs-cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: sys-class-net
+          hostPath:
+            path: /sys/class/net
+            type: Directory
+        - name: sys-block
+          hostPath:
+            path: /sys/block
+            type: Directory
