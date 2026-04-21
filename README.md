@@ -177,14 +177,14 @@ flowchart TB
 ### One-liner install (any Linux)
 
 ```bash
-curl -sfL https://get.kerno.sh | sudo bash
+curl -sfL https://raw.githubusercontent.com/lowplane/kerno/main/scripts/install.sh | sudo bash
 sudo kerno doctor
 ```
 
 ### Or run as a daemon (bare metal / VMs)
 
 ```bash
-curl -sfL https://get.kerno.sh | sudo bash -s -- --daemon
+curl -sfL https://raw.githubusercontent.com/lowplane/kerno/main/scripts/install.sh | sudo bash -s -- --daemon
 # Kerno is now running as a systemd service with Prometheus metrics on :9090
 sudo kerno doctor          # One-shot diagnosis
 journalctl -u kerno -f     # Stream logs
