@@ -9,6 +9,10 @@ project_name: kerno
 before:
   hooks:
     - go mod tidy
+    # Generate bpf2go bindings (*_bpfel.go) so amd64/arm64 builds can
+    # resolve diskIOObjects, syscallLatencyObjects, etc. The release
+    # workflow installs clang+libbpf-dev before invoking goreleaser.
+    - go generate ./internal/bpf/...
 
 builds:
   - id: kerno
