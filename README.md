@@ -33,29 +33,7 @@ sudo kerno doctor
 
 That single command runs for 30 seconds, collects eBPF signals across **6 dimensions** simultaneously (syscalls, TCP, OOM, disk I/O, scheduler, FDs), correlates them, and prints a ranked diagnostic report with **plain-English causes, evidence, and actionable fixes** - no setup, no config, no dashboards.
 
-**Free. Open source. CNCF-aligned. Kubernetes-native. Works on bare metal too.**
-
----
-
-## Status
-
-| Phase | Scope | State |
-|---|---|---|
-| 0 | Build pipeline, CI, releases | ✅ shipped |
-| 1 | 6 eBPF programs, kernel verifier OK | ✅ shipped |
-| 2 | Bounded-memory aggregator, 6 live collectors | ✅ shipped |
-| 3 | `kerno doctor` engine, 11 rules, JSON+pretty renderers, exit codes | ✅ shipped |
-
-End-to-end production-readiness is gated by **`make verify`** — 13 phases, 62 checks, including:
-
-- 6/6 eBPF programs accepted by the kernel verifier on real hardware
-- 4 induce → detect pairings (chaos scenario triggers paired doctor rule)
-- `tc netem` packet-loss → `tcp_retransmit_storm` rule fires
-- `stress-ng --cpu`/`--hdd` → CPU and disk rules fire
-- daemon `/healthz` + `/readyz` + `/metrics` (583-line Prometheus exposition)
-- helm lint + k8s manifest YAML parse + systemd unit + goreleaser config
-
----
+**Free. Open source. Kubernetes-native. Works on bare metal too.**
 
 ## Why Kerno?
 
@@ -106,74 +84,9 @@ Kerno runs as a DaemonSet on every node, streams kernel signals through eBPF wit
 kubectl -n kerno-system exec ds/kerno -- kerno doctor
 ```
 
-One command. 30 seconds later:
+One command. 30 seconds later, you get the report shown in the [demo above](#kerno) — ranked findings, plain-English causes, evidence, and copy-paste fix steps.
 
-```console
-$ kubectl -n kerno-system exec ds/kerno -- kerno doctor
-
-  ██╗  ██╗███████╗██████╗ ███╗   ██╗ ██████╗
-  ██║ ██╔╝██╔════╝██╔══██╗████╗  ██║██╔═══██╗   Production Incident Report
-  █████╔╝ █████╗  ██████╔╝██╔██╗ ██║██║   ██║   ──────────────────────────
-  ██╔═██╗ ██╔══╝  ██╔══██╗██║╚██╗██║██║   ██║   Cluster  prod-us-east-1
-  ██║  ██╗███████╗██║  ██║██║ ╚████║╚██████╔╝   Node     ip-10-0-3-47
-  ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝    Kernel   6.8.0-aws · x86_64
-                                                 Window   30.0s · 12,481 events
-
-
-  ❚❚  TRIAGE ────────────────────────────────────────────────────────── 30s
-      ● ● ●   2 critical  ·  1 warning  ·  0 info
-  ─────────────────────────────────────────────────────────────────────────
-
-
-  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-  ┃ ●  CRITICAL  ·  Disk I/O Bottleneck                          SLO 🔥   ┃
-  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-     Pod       payments/checkout-api-7f4b8c-x9k2p
-     Volume    /var/lib/postgres  (EBS gp3, 3,000 IOPS)
-     Signal    fsync p99  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇  280 ms
-               threshold  ▇▇▇▇▇▇▇▇▇▇▇▇▇                 200 ms
-     Cause     EBS volume saturated · fsync blocking commit log writes
-     Impact    checkout p99 ↑ 8.2×  ·  connection pool 94% saturated
-     Fix       → bump EBS IOPS  3000 → 6000
-               → or move commit log to local NVMe
-
-  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-  ┃ ●  CRITICAL  ·  TCP Retransmit Storm                         SLO 🔥   ┃
-  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-     Namespace ingress-nginx
-     Pod       nginx-ingress-controller-qz8hv
-     Signal    retransmits  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇    12.3 %
-               threshold    ▇▇▇▇                          2.0 %
-     Cause     packet loss on eth0 · likely upstream NLB path
-     Impact    every external request at risk of latency spike
-     Fix       → kubectl exec ... -- ethtool -S eth0 | grep error
-               → check AWS NLB target group health
-
-  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-  ┃ ▲  WARNING   ·  Scheduler Contention                                  ┃
-  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-     Node      ip-10-0-3-47  (c6i.2xlarge · 8 vCPU)
-     Signal    runqueue p99  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇             18 ms
-               threshold     ▇▇▇▇▇                            5 ms
-     Cause     noisy neighbor · 14 pods competing for 8 vCPUs
-     Fix       → reduce pod density or set CPU requests
-               → kubectl top pods --sort-by=cpu
-
-
-  ▼  RECOMMENDED ORDER ──────────────────────────────────────────────────
-
-     1.  [ NOW  ]   Disk I/O Bottleneck       payments/checkout-api
-     2.  [ NOW  ]   TCP Retransmit Storm      ingress-nginx
-     3.  [ 5min ]   Scheduler Contention      ip-10-0-3-47
-
-
-  kerno doctor --ai           for root-cause analysis
-  kerno doctor --output json  for runbooks / Slack bots
-  kerno predict               to surface failures before they page you
-
-```
-
-That's the entire debugging loop - from page to root cause - in a single command.
+That's the entire debugging loop — from page to root cause — in a single command.
 
 ---
 
