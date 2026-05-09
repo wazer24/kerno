@@ -17,13 +17,16 @@
 Output demo.gif
 
 # ── visual config ──
-# Width 1300 fits the 80-col box-drawn finding plus padding without
-# wrapping. Height 820 leaves room for header + degradation panel +
-# 2 findings + summary in a single screen.
+# Width  1300 fits the 80-col box-drawn finding plus padding.
+# Height 1400 fits the full ~50-line report (KERNO logo + header +
+# triage + finding panels + recommended order + summary) in a single
+# screen, so the KERNO banner stays visible at the top after the
+# doctor finishes painting. Without this the report scrolls past the
+# top frame and the viewer never sees the brand.
 Set Shell      "bash"
 Set FontSize   14
 Set Width      1300
-Set Height     820
+Set Height     1400
 Set Theme      "Dracula"
 Set TypingSpeed 40ms
 Set Padding    24
