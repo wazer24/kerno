@@ -10,8 +10,13 @@
 //   1. Install clang + libbpf-dev
 //   2. Run: make generate
 //   3. Run: make build
+//
+// This stub file is gated to only compile on architectures bpf2go
+// does NOT generate bindings for. Once `go generate` has produced the
+// _bpfel.go files (on amd64/arm64/...), those provide the real
+// definitions and this file is excluded.
 
-//go:build !ebpf
+//go:build !386 && !amd64 && !arm && !arm64 && !loong64 && !mips64le && !mipsle && !ppc64le && !riscv64 && !wasm
 
 package bpf
 

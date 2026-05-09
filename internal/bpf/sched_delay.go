@@ -16,7 +16,7 @@ import (
 	"github.com/cilium/ebpf/ringbuf"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -Werror -I c/headers" -target bpfel -type sched_event schedDelay c/sched_delay.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -Werror -D__TARGET_ARCH_x86 -I c/headers" -target bpfel -type sched_event schedDelay c/sched_delay.c
 
 // SchedDelayLoader manages the sched_delay eBPF program.
 type SchedDelayLoader struct {
