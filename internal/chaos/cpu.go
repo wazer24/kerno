@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // CPUScenario saturates the host CPU by running tight loops on multiple
@@ -33,23 +34,32 @@ func (CPUScenario) PairedRule() string { return "scheduler_contention" }
 
 // Run implements Scenario.
 //
-// Each worker calls runtime.LockOSThread() so it runs on a dedicated OS
-// thread. With more locked threads than host CPUs, the OS scheduler
-// (not Go's M:N runtime) is forced to queue ready threads — which is
-// precisely the signal kerno's scheduler_contention rule keys on.
-// Without this pinning, GOMAXPROCS caps the number of Ms running tight
-// loops at NumCPU and the kernel runqueue stays shallow.
+// Two kinds of workers run together:
+//
+//  1. Spinners: pinned to OS threads via runtime.LockOSThread, running
+//     tight CPU loops. These saturate every CPU.
+//
+//  2. Wakers: ordinary goroutines that briefly sleep then do a small
+//     burst of work. Sleep parks them on a futex; when the timer fires
+//     they go through sched_wakeup. With every CPU saturated by the
+//     spinners, they wait in the kernel runqueue before being scheduled
+//     — which is exactly the signal kerno's sched_delay collector
+//     measures (wakeup-to-switch interval).
+//
+// Without the wakers, pure spinners never sleep, so they never trigger
+// sched_wakeup and the runqueue stays invisible to the doctor.
 func (s CPUScenario) Run(ctx context.Context, opts Options) error {
-	workers := cpuWorkersFromIntensity(opts.Intensity, runtime.NumCPU())
-	fmt.Fprintf(opts.Out, "    spawning %d CPU-pinned workers (NumCPU=%d)\n",
-		workers, runtime.NumCPU())
+	spinners := cpuWorkersFromIntensity(opts.Intensity, runtime.NumCPU())
+	wakers := wakerCountFromIntensity(opts.Intensity, runtime.NumCPU())
+	fmt.Fprintf(opts.Out, "    spawning %d CPU-pinned spinners + %d wakers (NumCPU=%d)\n",
+		spinners, wakers, runtime.NumCPU())
 
 	// sink is updated atomically across all workers so the compiler
 	// can't prove the loop body is dead.
 	var sink atomic.Uint64
 
 	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
+	for i := 0; i < spinners; i++ {
 		wg.Add(1)
 		go func(seed int64) {
 			defer wg.Done()
@@ -66,9 +76,48 @@ func (s CPUScenario) Run(ctx context.Context, opts Options) error {
 			}
 		}(int64(i))
 	}
+	for i := 0; i < wakers; i++ {
+		wg.Add(1)
+		go func(seed int64) {
+			defer wg.Done()
+			r := rand.New(rand.NewSource(seed)) //nolint:gosec
+			for ctx.Err() == nil {
+				// Sleep 1ms — short enough to wake up many times per
+				// second and rack up runqueue delay against the
+				// spinner-saturated CPUs.
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Millisecond):
+				}
+				var local float64
+				for k := 0; k < 5_000; k++ {
+					local += math.Sqrt(r.Float64())
+				}
+				sink.Add(uint64(local))
+			}
+		}(int64(i + spinners))
+	}
 	wg.Wait()
 	_ = sink.Load() // observe the running total to keep it live
 	return nil
+}
+
+// wakerCountFromIntensity returns how many wake-and-work goroutines
+// run alongside the spinners. They're the ones whose runqueue delay
+// the doctor will catch.
+func wakerCountFromIntensity(intensity Intensity, ncpu int) int {
+	if ncpu <= 0 {
+		ncpu = 1
+	}
+	switch intensity {
+	case IntensityLow:
+		return 4
+	case IntensityHigh:
+		return ncpu * 4
+	default:
+		return ncpu * 2
+	}
 }
 
 // cpuWorkersFromIntensity oversubscribes CPUs heavily so the OS
