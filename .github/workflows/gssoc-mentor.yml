@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: read
+  issues: write         # /repos/:o/:r/labels and /issues/:n/labels live under the issues resource
   pull-requests: write
 
 jobs:

@@ -33,6 +33,7 @@ on:
 
 permissions:
   contents: read
+  issues: write         # /issues/:n/labels endpoint is under the issues resource
   pull-requests: write
 
 jobs:
