@@ -79,7 +79,9 @@ func (c *FDCollector) Start(ctx context.Context) error {
 		return fmt.Errorf("opening fd events: %w", err)
 	}
 
-	go c.consume(runCtx, ch)
+	RunSafeCollectorGoroutine(runCtx, c.Name(), c.logger, func() {
+		c.consume(runCtx, ch)
+	})
 	return nil
 }
 
@@ -138,7 +140,7 @@ func (c *FDCollector) record(event *bpf.FDEvent) {
 }
 
 // Snapshot implements Collector. Returns *FDSnapshot.
-func (c *FDCollector) Snapshot() any {
+func (c *FDCollector) Snapshot() interface{} {
 	c.mu.Lock()
 	totalOpens := c.totalOpens
 	totalCloses := c.totalCloses

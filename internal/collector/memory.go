@@ -74,7 +74,9 @@ func (c *MemoryCollector) Start(ctx context.Context) error {
 		c.logger.Warn("initial memory poll failed", "error", err)
 	}
 
-	go c.loop(runCtx)
+	RunSafeCollectorGoroutine(runCtx, c.Name(), c.logger, func() {
+		c.loop(runCtx)
+	})
 	return nil
 }
 
@@ -173,7 +175,7 @@ func (c *MemoryCollector) poll() error {
 }
 
 // Snapshot implements Collector. Returns *MemorySnapshot.
-func (c *MemoryCollector) Snapshot() any {
+func (c *MemoryCollector) Snapshot() interface{} {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.have {

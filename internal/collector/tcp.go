@@ -87,7 +87,9 @@ func (c *TCPCollector) Start(ctx context.Context) error {
 		return fmt.Errorf("opening tcp events: %w", err)
 	}
 
-	go c.consume(runCtx, ch)
+	RunSafeCollectorGoroutine(runCtx, c.Name(), c.logger, func() {
+		c.consume(runCtx, ch)
+	})
 	return nil
 }
 
@@ -166,7 +168,7 @@ func (c *TCPCollector) record(event *bpf.TCPEvent) {
 }
 
 // Snapshot implements Collector. Returns *TCPSnapshot.
-func (c *TCPCollector) Snapshot() any {
+func (c *TCPCollector) Snapshot() interface{} {
 	c.mu.Lock()
 	totalEvents := c.totalEvents
 	totalRetransmits := c.totalRetransmits

@@ -84,7 +84,9 @@ func (c *SyscallCollector) Start(ctx context.Context) error {
 		return fmt.Errorf("opening syscall events: %w", err)
 	}
 
-	go c.consume(runCtx, ch)
+	RunSafeCollectorGoroutine(runCtx, c.Name(), c.logger, func() {
+		c.consume(runCtx, ch)
+	})
 	return nil
 }
 
@@ -139,7 +141,7 @@ func (c *SyscallCollector) record(event *bpf.SyscallEvent) {
 }
 
 // Snapshot implements Collector. Returns *SyscallSnapshot.
-func (c *SyscallCollector) Snapshot() any {
+func (c *SyscallCollector) Snapshot() interface{} {
 	c.mu.Lock()
 	total := c.totalCount
 	entries := make([]SyscallEntry, 0, c.keys.Len())

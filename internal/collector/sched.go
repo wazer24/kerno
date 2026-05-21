@@ -78,7 +78,9 @@ func (c *SchedCollector) Start(ctx context.Context) error {
 		return fmt.Errorf("opening sched events: %w", err)
 	}
 
-	go c.consume(runCtx, ch)
+	RunSafeCollectorGoroutine(runCtx, c.Name(), c.logger, func() {
+		c.consume(runCtx, ch)
+	})
 	return nil
 }
 
@@ -131,7 +133,7 @@ func (c *SchedCollector) record(event *bpf.SchedEvent) {
 }
 
 // Snapshot implements Collector. Returns *SchedSnapshot.
-func (c *SchedCollector) Snapshot() any {
+func (c *SchedCollector) Snapshot() interface{} {
 	c.mu.Lock()
 	total := c.total
 	globalSnap := c.global.Snapshot()

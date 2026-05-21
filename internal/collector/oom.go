@@ -54,7 +54,9 @@ func (c *OOMCollector) Start(ctx context.Context) error {
 		return fmt.Errorf("opening oom events: %w", err)
 	}
 
-	go c.consume(runCtx, ch)
+	RunSafeCollectorGoroutine(runCtx, c.Name(), c.logger, func() {
+		c.consume(runCtx, ch)
+	})
 	return nil
 }
 
@@ -113,7 +115,7 @@ func (c *OOMCollector) record(event *bpf.OOMEvent) {
 }
 
 // Snapshot implements Collector. Returns *OOMSnapshot.
-func (c *OOMCollector) Snapshot() any {
+func (c *OOMCollector) Snapshot() interface{} {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

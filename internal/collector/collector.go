@@ -14,6 +14,9 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/optiqor/kerno/internal/metrics"
+	"github.com/optiqor/kerno/internal/observability"
 )
 
 // Collector reads raw eBPF events, aggregates them, and produces typed
@@ -31,7 +34,7 @@ type Collector interface {
 
 	// Snapshot returns a point-in-time copy of the aggregated signals.
 	// The returned value is safe for concurrent read by other goroutines.
-	Snapshot() any
+	Snapshot() interface{}
 }
 
 // Registry manages the lifecycle of multiple collectors.
@@ -142,10 +145,66 @@ func (r *Registry) Signals(duration time.Duration) *Signals {
 			s.FD = v
 		case *MemorySnapshot:
 			s.Memory = v
-		case *CgroupMemorySnapshot:
-			s.CgroupMemory = v
 		}
 	}
 
 	return s
+}
+
+// RunSafeCollectorGoroutine wraps a collector's core processing loop with panic recovery,
+// exponential backoff, and crash-loop safety.
+func RunSafeCollectorGoroutine(ctx context.Context, name string, logger *slog.Logger, fn func()) {
+	go func() {
+		backoff := 1 * time.Second
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+
+			panicked := true
+			disabled := false
+
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						disabled = observability.GlobalHandler.HandlePanic(name, r, logger)
+						reason := "unknown"
+						if err, ok := r.(error); ok {
+							reason = err.Error()
+						} else if s, ok := r.(string); ok {
+							reason = s
+						}
+						metrics.CollectorPanicsTotal.WithLabelValues(name, reason).Inc()
+					}
+				}()
+
+				// Run the actual collector loop
+				fn()
+				panicked = false // If it returned normally, it didn't panic
+			}()
+
+			if !panicked {
+				return // Normal exit
+			}
+
+			if disabled {
+				logger.Error("collector permanently disabled due to crash-looping", "name", name)
+				metrics.CollectorDisabled.WithLabelValues(name).Set(1)
+				return // Exit goroutine permanently
+			}
+
+			// Backoff before restarting
+			logger.Warn("collector panicked, restarting after backoff", "name", name, "backoff", backoff)
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return
+			}
+
+			backoff *= 2
+			if backoff > 60*time.Second {
+				backoff = 60 * time.Second
+			}
+		}
+	}()
 }
